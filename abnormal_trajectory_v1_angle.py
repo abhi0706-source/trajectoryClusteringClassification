@@ -83,8 +83,11 @@ def extract_trajectory(csv_path: str) -> Optional[np.ndarray]:
         if len(df) < 2:
             return None
         return df[["frameNo", "center_x", "center_y"]].values
-    except:
-        return None
+-    except:
+-        return None
++    except (FileNotFoundError, pd.errors.EmptyDataError) as exc:
++        warnings.warn(f"Failed to extract trajectory from {csv_path}: {exc}")
++        return None
 
 def resample_trajectory(traj: np.ndarray, n_points: int) -> Optional[np.ndarray]:
     if traj is None or traj.shape[0] < 2:
