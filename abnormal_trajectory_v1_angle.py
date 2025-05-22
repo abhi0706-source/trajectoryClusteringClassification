@@ -76,6 +76,17 @@ BINARY_COLORS_BGR: Dict[int, Tuple[int, int, int]] = {0: (0, 255, 0), 1: (0, 0, 
 # UTILITY FUNCTIONS (From original code)
 # -----------------------------
 def extract_trajectory(csv_path: str) -> Optional[np.ndarray]:
+    """
+    Extracts the trajectory center points from a CSV file.
+    
+    Reads frame number and bounding box columns from the CSV, computes the center coordinates for each frame, and returns an array of frame numbers and center positions. Returns None if the file is invalid or contains fewer than two frames.
+    
+    Args:
+        csv_path: Path to the CSV file containing trajectory data.
+    
+    Returns:
+        A NumPy array of shape (n_frames, 3) with columns [frameNo, center_x, center_y], or None if extraction fails.
+    """
     try:
         df = pd.read_csv(csv_path, usecols=["frameNo", "left", "top", "w", "h"])
         df["center_x"] = df["left"] + df["w"] / 2
@@ -87,6 +98,16 @@ def extract_trajectory(csv_path: str) -> Optional[np.ndarray]:
         return None
 
 def resample_trajectory(traj: np.ndarray, n_points: int) -> Optional[np.ndarray]:
+    """
+    Resamples a trajectory to a fixed number of points using interpolation.
+    
+    Args:
+        traj: Array of shape (N, 3) containing frame number and (x, y) coordinates.
+        n_points: Desired number of points in the resampled trajectory.
+    
+    Returns:
+        A NumPy array of shape (n_points, 3) with evenly spaced frame numbers and resampled (x, y) coordinates, or None if input is invalid or resampling fails.
+    """
     if traj is None or traj.shape[0] < 2:
         return None
     xy = traj[:, 1:3]
@@ -100,6 +121,18 @@ def resample_trajectory(traj: np.ndarray, n_points: int) -> Optional[np.ndarray]
         return None
 
 def load_trajectories(folder_path: str, n_points: int) -> Tuple[List[np.ndarray], List[str]]:
+    """
+    Loads and resamples all trajectory CSV files from a folder.
+    
+    Iterates through CSV files in the specified directory, extracts trajectory data, resamples each trajectory to a fixed number of points, and returns the list of valid resampled trajectories along with their corresponding filenames.
+    
+    Args:
+        folder_path: Path to the folder containing trajectory CSV files.
+        n_points: Number of points to resample each trajectory to.
+    
+    Returns:
+        A tuple containing a list of resampled trajectories (as numpy arrays) and a list of their corresponding filenames.
+    """
     if not os.path.isdir(folder_path):
         return [], []
     files = sorted([f for f in os.listdir(folder_path) if f.endswith(".csv")])
@@ -115,6 +148,17 @@ def load_trajectories(folder_path: str, n_points: int) -> Tuple[List[np.ndarray]
     return trajs, names
 
 def load_ground_truth_from_csv(gt_csv: str, fnames: List[str]) -> Optional[np.ndarray]:
+    """
+    Loads ground truth labels from a CSV file and matches them to a list of filenames.
+    
+    Args:
+        gt_csv: Path to the ground truth CSV file, which must contain 'filename' and 'label' columns.
+        fnames: List of filenames to match with ground truth labels.
+    
+    Returns:
+        An array of labels corresponding to the input filenames, or None if the CSV is missing or invalid.
+        If a filename is not found in the CSV, its label is set to -1.
+    """
     if not os.path.exists(gt_csv):
         return None
     df = pd.read_csv(gt_csv)
@@ -126,10 +170,25 @@ def load_ground_truth_from_csv(gt_csv: str, fnames: List[str]) -> Optional[np.nd
     return np.array(labels)
 
 def smallest_angle_diff(a1, a2):
+    """
+    Calculates the smallest signed difference between two angles in radians.
+    
+    The result is normalized to the range [-π, π], representing the shortest angular distance from a2 to a1.
+    """
     d = a1 - a2
     return (d + np.pi) % (2 * np.pi) - np.pi
 
 def intersects_zone(traj, zone):
+    """
+    Checks if any point in a trajectory lies within or on the boundary of a specified polygonal zone.
+    
+    Args:
+        traj: Trajectory as a NumPy array with at least three columns (frame, x, y).
+        zone: Polygonal zone as a NumPy array of shape (N, 2), where N ≥ 3.
+    
+    Returns:
+        True if any trajectory point is inside or on the edge of the zone; otherwise, False.
+    """
     if zone is None or len(zone) < 3 or traj is None or traj.shape[0] == 0:
         return False
     for pt in traj[:, 1:3].astype(np.float32):
@@ -144,12 +203,22 @@ class TrajectoryAngleAnalyzer:
     """Class for comprehensive angle analysis of trajectories"""
     
     def __init__(self):
+        """
+        Initializes the class with an empty list to store trajectory data.
+        """
         self.trajectory_data = []
         
     def analyze_trajectory_angles(self, traj: np.ndarray) -> Dict[str, Any]:
         """
-        Comprehensive angle analysis for a single trajectory
-        Returns detailed angle metrics
+        Performs comprehensive angle and curvature analysis on a single trajectory.
+        
+        Analyzes the input trajectory to compute detailed metrics including segment direction angles, angular differences, angular velocities, angular accelerations, curvature, turn statistics, smoothness, and complexity. Returns a dictionary containing all computed metrics for further feature extraction or visualization.
+        
+        Args:
+            traj: Array of shape (N, 3) where each row contains [frame, x, y] for a trajectory.
+        
+        Returns:
+            Dictionary with detailed angle, angular velocity, angular acceleration, curvature, turn, smoothness, and complexity metrics for the trajectory. If the trajectory is too short or invalid, returns a dictionary of zeroed/default metrics.
         """
         pts = traj[:, 1:3]
         timestamps = traj[:, 0]
@@ -253,7 +322,11 @@ class TrajectoryAngleAnalyzer:
         return analysis
     
     def _empty_analysis(self) -> Dict[str, Any]:
-        """Return empty analysis for invalid trajectories"""
+        """
+        Returns a dictionary of zeroed and empty angle analysis metrics for invalid or missing trajectories.
+        
+        This provides a standardized output structure with default values when trajectory analysis cannot be performed.
+        """
         return {
             'angles': np.array([]),
             'angles_deg': np.array([]),
@@ -285,7 +358,15 @@ class TrajectoryAngleAnalyzer:
         }
     
     def _calculate_curvature(self, pts: np.ndarray) -> np.ndarray:
-        """Calculate curvature at each point using three consecutive points"""
+        """
+        Calculates the curvature at each point of a trajectory using three consecutive points.
+        
+        Args:
+            pts: An array of 2D points representing the trajectory.
+        
+        Returns:
+            An array of curvature values for each internal point in the trajectory.
+        """
         if len(pts) < 3:
             return np.array([])
         
@@ -314,7 +395,15 @@ class TrajectoryAngleAnalyzer:
         return np.array(curvatures)
     
     def _calculate_smoothness(self, values: np.ndarray) -> float:
-        """Calculate smoothness as inverse of variation"""
+        """
+        Calculates a smoothness score for a sequence as the inverse of its total variation.
+        
+        Args:
+            values: Sequence of numeric values representing a trajectory feature.
+        
+        Returns:
+            A float between 0 and 1, where higher values indicate smoother sequences.
+        """
         if len(values) < 2:
             return 1.0
         variation = np.sum(np.abs(np.diff(values)))
@@ -327,11 +416,27 @@ class Trajectory3DVisualizer:
     """Class for creating 3D visualizations of trajectory features"""
     
     def __init__(self, output_dir: str):
+        """
+        Initializes the visualizer with the specified output directory.
+        
+        Args:
+            output_dir: Path to the directory where visualizations will be saved.
+        """
         self.output_dir = output_dir
         
     def create_3d_feature_space(self, features: np.ndarray, labels: np.ndarray, 
                                feature_names: List[str], title: str = "3D Feature Space"):
-        """Create 3D scatter plot of feature space"""
+        """
+                               Creates a 3D scatter plot of three selected features, coloring points by label.
+                               
+                               Args:
+                                   features: Feature matrix where each row corresponds to a trajectory and columns to features.
+                                   labels: Array of class labels for each trajectory.
+                                   feature_names: List of feature names corresponding to columns in the feature matrix.
+                                   title: Title for the plot (default: "3D Feature Space").
+                               
+                               The plot is saved to the output directory as "3d_feature_space.png".
+                               """
         # Select top 3 most important features for 3D visualization
         # For now, let's use angular velocity, curvature, and turn angle features
         if features.shape[1] >= 3:
@@ -364,7 +469,11 @@ class Trajectory3DVisualizer:
     
     def create_angle_evolution_3d(self, trajectories: List[np.ndarray], 
                                  angle_analyses: List[Dict], labels: np.ndarray):
-        """Create 3D plot showing evolution of angles over time"""
+        """
+                                 Creates a 3D plot visualizing the evolution of angles and angular velocities over time for multiple trajectories.
+                                 
+                                 Each trajectory is plotted as a 3D line where the x-axis represents time steps, the y-axis shows the angle in degrees, and the z-axis displays angular velocity in degrees per step. Trajectories are colored by label (e.g., normal or abnormal) for comparison, and the plot is saved to the output directory.
+                                 """
         fig = plt.figure(figsize=(15, 10))
         ax = fig.add_subplot(111, projection='3d')
         
@@ -403,7 +512,11 @@ class Trajectory3DVisualizer:
     
     def create_trajectory_surface_plot(self, trajectories: List[np.ndarray], 
                                      angle_analyses: List[Dict], labels: np.ndarray):
-        """Create surface plot of trajectory characteristics"""
+        """
+                                     Creates a 3D surface plot comparing normal and abnormal trajectory groups.
+                                     
+                                     Generates interactive surface plots for trajectories labeled as normal and abnormal, visualizing their spatial characteristics side by side. The resulting plot is saved as an HTML file and displayed.
+                                     """
         # Prepare data for surface plot
         normal_trajs = [traj for traj, label in zip(trajectories, labels) if label == 0]
         abnormal_trajs = [traj for traj, label in zip(trajectories, labels) if label == 1]
@@ -427,7 +540,11 @@ class Trajectory3DVisualizer:
         fig.show()
     
     def _add_trajectory_surface(self, fig, trajectories, title, row, col):
-        """Helper function to add trajectory surface to subplot"""
+        """
+        Adds a 3D surface plot of interpolated trajectories to a subplot.
+        
+        Interpolates a subset of trajectories to a uniform length, constructs a surface representing their spatial evolution, and adds it to the specified subplot in the provided figure.
+        """
         # Create a grid representing average trajectory characteristics
         max_len = max(len(traj) for traj in trajectories)
         
@@ -465,11 +582,21 @@ class PerformanceAnalyzer:
     """Class for comprehensive performance analysis"""
     
     def __init__(self, output_dir: str):
+        """
+        Initializes the visualizer with the specified output directory for saving plots.
+        
+        Args:
+            output_dir: Path to the directory where generated visualizations will be saved.
+        """
         self.output_dir = output_dir
         
     def analyze_model_performance(self, y_true: np.ndarray, y_pred: np.ndarray, 
                                 y_prob: np.ndarray = None, class_names: List[str] = None):
-        """Comprehensive performance analysis"""
+        """
+                                Performs comprehensive evaluation of classification model performance.
+                                
+                                Calculates and prints overall accuracy, weighted precision, recall, and F1-score, displays a detailed classification report, visualizes the confusion matrix, and provides per-class metric analysis. If prediction probabilities are provided, plots ROC and Precision-Recall curves. Returns a dictionary of key performance metrics.
+                                """
         if class_names is None:
             class_names = ['Normal', 'Abnormal']
             
@@ -512,7 +639,13 @@ class PerformanceAnalyzer:
         }
     
     def _plot_confusion_matrix(self, cm: np.ndarray, class_names: List[str]):
-        """Plot confusion matrix"""
+        """
+        Displays and saves a confusion matrix heatmap for classification results.
+        
+        Args:
+            cm: Confusion matrix as a 2D NumPy array.
+            class_names: List of class label names for axis annotation.
+        """
         plt.figure(figsize=(8, 6))
         sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
                    xticklabels=class_names, yticklabels=class_names)
@@ -525,7 +658,14 @@ class PerformanceAnalyzer:
     
     def _analyze_per_class_performance(self, y_true: np.ndarray, y_pred: np.ndarray, 
                                      class_names: List[str]):
-        """Analyze performance per class"""
+        """
+                                     Calculates and prints precision, recall, specificity, F1-score, and support for each class.
+                                     
+                                     Args:
+                                         y_true: Array of true class labels.
+                                         y_pred: Array of predicted class labels.
+                                         class_names: List of class names corresponding to label indices.
+                                     """
         print("\nPer-Class Analysis:")
         print("-" * 40)
         
@@ -551,7 +691,15 @@ class PerformanceAnalyzer:
             print()
     
     def _plot_roc_and_pr_curves(self, y_true: np.ndarray, y_prob: np.ndarray):
-        """Plot ROC and Precision-Recall curves"""
+        """
+        Plots the ROC and Precision-Recall curves for binary classification results.
+        
+        Args:
+            y_true: Ground truth binary labels.
+            y_prob: Predicted probabilities for the positive class.
+        
+        The function saves the resulting plots as 'roc_pr_curves.png' in the output directory and displays them.
+        """
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
         
         # ROC Curve
@@ -592,7 +740,11 @@ class PerformanceAnalyzer:
 # -----------------------------
 def extract_comprehensive_features(traj: np.ndarray, thr: Dict, zone: np.ndarray, 
                                  analyzer: TrajectoryAngleAnalyzer) -> np.ndarray:
-    """Extract comprehensive features including detailed angle analysis"""
+    """
+                                 Extracts a comprehensive feature vector from a trajectory, combining geometric, intersection, and detailed angle-based metrics.
+                                 
+                                 The feature vector includes direct distance, total length, straightness ratio, intersection with a specified zone, and a suite of angle, angular velocity, angular acceleration, curvature, turn, smoothness, and complexity metrics derived from detailed angle analysis.
+                                 """
     # Get angle analysis
     angle_analysis = analyzer.analyze_trajectory_angles(traj)
     
@@ -651,7 +803,11 @@ def extract_comprehensive_features(traj: np.ndarray, thr: Dict, zone: np.ndarray
     return np.array(features)
 
 def get_comprehensive_feature_names() -> List[str]:
-    """Return names of all comprehensive features"""
+    """
+    Returns the list of feature names used in comprehensive trajectory analysis.
+    
+    The returned list includes basic geometric, angle-based, angular velocity, angular acceleration, curvature, turn, smoothness, and complexity features extracted from trajectories.
+    """
     return [
         # Basic features
         'direct_distance',
@@ -696,14 +852,31 @@ def get_comprehensive_feature_names() -> List[str]:
 
 def build_comprehensive_feature_matrix(trajs: List[np.ndarray], thr: Dict, 
                                      zone: np.ndarray, analyzer: TrajectoryAngleAnalyzer) -> np.ndarray:
-    """Build feature matrix with comprehensive angle analysis"""
+    """
+                                     Builds a feature matrix by extracting comprehensive geometric and angle-based features from a list of trajectories.
+                                     
+                                     Each trajectory is processed to generate a feature vector that includes basic trajectory metrics and detailed angle analysis using the provided analyzer.
+                                     
+                                     Args:
+                                         trajs: List of trajectory arrays to process.
+                                         thr: Dictionary of threshold parameters for feature extraction.
+                                         zone: Polygonal zone used for intersection checks.
+                                         analyzer: Instance of TrajectoryAngleAnalyzer for angle-based feature extraction.
+                                     
+                                     Returns:
+                                         A 2D NumPy array where each row corresponds to the feature vector of a trajectory.
+                                     """
     return np.vstack([extract_comprehensive_features(t, thr, zone, analyzer) for t in trajs])
 
 # -----------------------------
 # RULE ENGINE (Simplified from original)
 # -----------------------------
 def assign_simple_binary_label(traj: np.ndarray, zone: np.ndarray, thr: Dict) -> int:
-    """Simplified binary classification: 0=Normal, 1=Abnormal"""
+    """
+    Assigns a binary label to a trajectory as normal (0) or abnormal (1) based on length, straightness, and sudden direction changes.
+    
+    A trajectory is labeled abnormal if it is too short, highly curved, or contains sharp turns exceeding 90 degrees.
+    """
     if traj is None or len(traj) < 2:
         return 1  # Abnormal
     
@@ -740,7 +913,12 @@ def assign_simple_binary_label(traj: np.ndarray, zone: np.ndarray, thr: Dict) ->
 # MAIN ANALYSIS FUNCTION
 # -----------------------------
 def main():
-    """Main analysis function"""
+    """
+    Executes the complete trajectory analysis pipeline, including data loading, feature extraction, angle analysis, model training with hyperparameter tuning, performance evaluation, and visualization.
+    
+    Returns:
+        dict: A dictionary containing the trained model, performance metrics, feature importance, angle analyses, test predictions, and test labels.
+    """
     print("Starting Comprehensive Trajectory Angle Analysis...")
     print("="*60)
     
@@ -882,7 +1060,11 @@ def main():
     }
 
 def create_detailed_angle_plots(angle_analyses: List[Dict], labels: np.ndarray, output_dir: str):
-    """Create detailed plots for angle analysis"""
+    """
+    Generates and saves comparative plots of angle-based trajectory metrics for normal and abnormal classes.
+    
+    Creates histograms and box plots to visualize and compare distributions of mean angular velocity, mean curvature, sharp turns, total turn angle, complexity score, and maximum angular acceleration between normal and abnormal trajectories. Plots are saved to the specified output directory.
+    """
     
     # Prepare data for plotting
     normal_analyses = [analysis for analysis, label in zip(angle_analyses, labels) if label == 0]
@@ -1010,7 +1192,21 @@ def create_detailed_angle_plots(angle_analyses: List[Dict], labels: np.ndarray, 
     plt.show()
 
 def tune_and_train_decision_tree(X_train, y_train, X_val, y_val, random_state=42):
-    """Enhanced hyperparameter tuning for decision tree"""
+    """
+    Performs hyperparameter tuning and training of a decision tree classifier using grid search.
+    
+    Fits a decision tree with cross-validated grid search over multiple hyperparameters, selects the best model based on weighted F1-score, evaluates its performance on a validation set, and returns the trained classifier.
+    
+    Args:
+    	X_train: Training feature matrix.
+    	y_train: Training labels.
+    	X_val: Validation feature matrix.
+    	y_val: Validation labels.
+    	random_state: Random seed for reproducibility.
+    
+    Returns:
+    	The best trained DecisionTreeClassifier instance.
+    """
     inner_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
     param_grid = {
         'max_depth': [None, 5, 10, 15, 20],
